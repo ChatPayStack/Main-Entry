@@ -66,6 +66,11 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
 
     print(msg)
     message = msg.get("message", {})
+    callback = msg.get("callback_query")
+    if callback:
+        print("Callback received:", callback.get("data"))
+        r.rpush("chatpay_queue", json.dumps(msg))
+        return {"ok": True}
     if message.get("voice") or message.get("audio"):
         print("Voice")
         voice = message.get("voice")
