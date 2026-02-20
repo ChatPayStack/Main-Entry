@@ -17,7 +17,7 @@ r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
 
 WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
+TELEGRAM_SEND_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
 client = OpenAI()
 
