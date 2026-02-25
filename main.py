@@ -6,10 +6,14 @@ import json
 import httpx
 import io
 from openai import OpenAI
+import stripe
 
 load_dotenv()
 
 app = FastAPI(title="ChatPay Main API")
+
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -52,6 +56,38 @@ async def fetch_voice_bytes(file_id: str) -> bytes:
             raise
         return r2.content
 
+
+@app.post("/stripe-webhook")
+async def stripe_webhook(request: Request):
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload,
+            sig_header,
+            STRIPE_WEBHOOK_SECRET
+        )
+    except Exception as e:
+        print("Stripe signature verification failed:", e)
+        return {"status": "invalid"}
+
+    if event["type"] == "checkout.session.completed":
+
+        session = event["data"]["object"]
+        metadata = session.get("metadata", {})
+
+        # Push event to worker via Redis
+        r.rpush("chatpay_queue", json.dumps({
+            "type": "stripe_webhook",
+            "metadata": metadata,
+            "stripe_session_id": session.get("id"),
+        }))
+
+        print("Stripe completion pushed to queue")
+
+    return {"status": "ok"}
 
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)):
