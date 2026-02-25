@@ -86,6 +86,15 @@ async def stripe_webhook(request: Request):
         }))
 
         print("Stripe completion pushed to queue")
+    
+    elif event["type"] in ["checkout.session.expired", "payment_intent.payment_failed"]:
+        obj = event["data"]["object"]
+
+        r.rpush("chatpay_queue", json.dumps({
+            "type": "stripe_webhook_failed",
+            "stripe_session_id": obj.get("id"),
+            "metadata": obj.get("metadata", {})
+        }))
 
     return {"status": "ok"}
 
