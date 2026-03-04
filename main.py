@@ -146,6 +146,10 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
         sender = message.get("from", {})     
         sender_username = sender.get("username")
         print("Message received from", sender_username)
+        reply = message.get("reply_to_message")
+        reply_text = None
+        if reply:
+            reply_text = reply.get("text")
 
         r.rpush("chatpay_queue", json.dumps(msg))
         print(f"Queued full message from {sender_username}")
