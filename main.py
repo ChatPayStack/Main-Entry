@@ -59,7 +59,7 @@ async def fetch_voice_bytes(file_id: str) -> bytes:
 
 @app.post("/stripe-webhook")
 async def stripe_webhook(request: Request):
-
+    
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
 
@@ -97,6 +97,66 @@ async def stripe_webhook(request: Request):
         }))
 
     return {"status": "ok"}
+
+@app.post("/coinbase-webhook")
+async def coinbase_webhook(request: Request):
+    try:
+        payload = await request.json()
+        print("Coinbase webhook received:", payload)
+
+        event_type = payload.get("eventType")
+
+        # ✅ Handle SUCCESS
+        if event_type == "onramp.transaction.success":
+
+            partner_ref = payload.get("partnerUserRef")
+
+            if not partner_ref:
+                print("❌ Missing partnerUserRef")
+                return {"status": "ignored"}
+
+            try:
+                thread_id, payment_id = partner_ref.split(":")
+            except Exception as e:
+                print("❌ Invalid partnerUserRef format:", partner_ref)
+                return {"status": "invalid_ref"}
+
+            # Push to Redis (same pattern as Stripe)
+            r.rpush("chatpay_queue", json.dumps({
+                "type": "coinbase_webhook",
+                "thread_id": thread_id,
+                "payment_id": payment_id,
+                "tx_hash": payload.get("txHash"),
+                "amount": payload.get("purchaseAmount"),
+                "currency": payload.get("purchaseCurrency"),
+            }))
+
+            print("✅ Coinbase success pushed to queue")
+
+        # ❌ Handle FAILURE
+        elif event_type == "onramp.transaction.failed":
+
+            partner_ref = payload.get("partnerUserRef")
+
+            if partner_ref:
+                try:
+                    thread_id, payment_id = partner_ref.split(":")
+                except Exception:
+                    return {"status": "invalid_ref"}
+
+                r.rpush("chatpay_queue", json.dumps({
+                    "type": "coinbase_webhook_failed",
+                    "thread_id": thread_id,
+                    "payment_id": payment_id,
+                }))
+
+                print("❌ Coinbase failure pushed to queue")
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        print("❌ Coinbase webhook error:", e)
+        return {"status": "error"}
 
 @app.post("/telegram-webhook")
 async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)):
