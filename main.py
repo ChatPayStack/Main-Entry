@@ -183,7 +183,7 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
         file_id = voice["file_id"]
 
         try:
-            bot_token = await get_bot_token(business_id)
+            bot_token = '8618363177:AAFDBFLhQxmMXGKzm6-t3VtCRpTp_oMfxuo'
             audio_bytes = await fetch_voice_bytes(file_id, bot_token)
         except Exception as e:
             print("ERR_FETCH_VOICE_BYTES", {"file_id": file_id, "err": repr(e)})
@@ -217,7 +217,9 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
         print(f"Queued full message from {sender_username}")
     else:
         async with httpx.AsyncClient(timeout=15) as localClient:
+
             chat_id = message["chat"]["id"]
+            print("Message in Mobs Case:",message)
             await localClient.post(
                 TELEGRAM_SEND_URL,
                 json={"chat_id": chat_id, "text": "Sorry we only support Voice Notes and Text"}
