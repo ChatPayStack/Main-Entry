@@ -171,7 +171,7 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
         raise
 
     print(msg)
-    message = msg.get("message", {})
+    message = msg.get("message") or msg.get("edited_message") or {}
     callback = msg.get("callback_query")
     if callback:
         print("Callback received:", callback.get("data"))
