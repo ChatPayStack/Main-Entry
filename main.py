@@ -79,7 +79,7 @@ async def stripe_webhook(request: Request):
         session = event["data"]["object"]
         metadata = session.get("metadata", {})
         business_id = metadata.get("business_id")
-
+        print("Business ID in metadata:",business_id)
         # Push event to worker via Redis
         r.rpush("chatpay_queue_{business_id}", json.dumps({
             "type": "stripe_webhook",
