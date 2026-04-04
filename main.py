@@ -7,6 +7,7 @@ import httpx
 import io
 from openai import OpenAI
 import stripe
+from db import get_bot_token
 
 load_dotenv()
 
@@ -25,12 +26,12 @@ TELEGRAM_SEND_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
 client = OpenAI()
 
-async def fetch_voice_bytes(file_id: str) -> bytes:
+async def fetch_voice_bytes(file_id: str, bot_token: str) -> bytes:
     async with httpx.AsyncClient() as client:
         try:
             # 1) get file_path
             r1 = await client.get(
-                f"https://api.telegram.org/bot{BOT_TOKEN}/getFile",
+                f"https://api.telegram.org/bot{bot_token}/getFile",
                 params={"file_id": file_id},
             )
             try:
@@ -49,7 +50,7 @@ async def fetch_voice_bytes(file_id: str) -> bytes:
             raise
         try:
             # 2) download bytes
-            r2 = await client.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}")
+            r2 = await client.get(f"https://api.telegram.org/file/bot{bot_token}/{file_path}")
             r2.raise_for_status()
         except Exception as e:
             print("ERR_TELEGRAM_DOWNLOAD", {"file_path": locals().get("file_path"), "status": getattr(r2, "status_code", None), "err": repr(e)})
@@ -158,13 +159,12 @@ async def coinbase_webhook(request: Request):
         print("❌ Coinbase webhook error:", e)
         return {"status": "error"}
 
-@app.post("/telegram-webhook")
-async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)):
-    if WEBHOOK_SECRET and x_telegram_bot_api_secret_token != WEBHOOK_SECRET:
-        raise HTTPException(status_code=403, detail="bad secret")
-
+@app.post("/telegram-webhook/{business_id}")
+async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)):
+  
     try:
         msg = await request.json()
+        msg["business_id"] = business_id
     except Exception as e:
         print("ERR_REQUEST_JSON", repr(e))
         raise
@@ -174,7 +174,7 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
     callback = msg.get("callback_query")
     if callback:
         print("Callback received:", callback.get("data"))
-        r.rpush("chatpay_queue", json.dumps(msg))
+        r.rpush(f"chatpay_queue_{business_id}", json.dumps(msg))
         return {"ok": True}
     if message.get("voice") or message.get("audio"):
         print("Voice")
@@ -182,7 +182,8 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
         file_id = voice["file_id"]
 
         try:
-            audio_bytes = await fetch_voice_bytes(file_id)
+            bot_token = await get_bot_token(business_id)
+            audio_bytes = await fetch_voice_bytes(file_id, bot_token)
         except Exception as e:
             print("ERR_FETCH_VOICE_BYTES", {"file_id": file_id, "err": repr(e)})
             return {"ok": True}
@@ -200,7 +201,7 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
         print(txt)
         message["text"] = txt
         msg["message"] = message
-        r.rpush("chatpay_queue", json.dumps(msg))
+        r.rpush(f"chatpay_queue_{business_id}", json.dumps(msg))
         
     elif "text" in message:
         sender = message.get("from", {})     
@@ -211,7 +212,7 @@ async def telegram_webhook(request: Request, x_telegram_bot_api_secret_token: st
         if reply:
             reply_text = reply.get("text")
 
-        r.rpush("chatpay_queue", json.dumps(msg))
+        r.rpush(f"chatpay_queue_{business_id}", json.dumps(msg))
         print(f"Queued full message from {sender_username}")
     else:
         async with httpx.AsyncClient(timeout=15) as localClient:
