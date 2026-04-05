@@ -75,7 +75,7 @@ async def stripe_webhook(request: Request):
         return {"status": "invalid"}
 
     if event["type"] == "checkout.session.completed":
-
+        print("Reached the completed part")
         session = event["data"]["object"]
         metadata = session.get("metadata", {})
         business_id = metadata.get("business_id")
