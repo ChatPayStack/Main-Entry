@@ -79,7 +79,6 @@ async def stripe_webhook(request: Request):
         session = event["data"]["object"]
         metadata = session.get("metadata", {})
         business_id = metadata.get("business_id")
-        print("Business ID in metadata:",business_id)
         # Push event to worker via Redis
         r.rpush(f"chatpay_queue_{business_id}", json.dumps({
             "type": "stripe_webhook",
@@ -183,7 +182,7 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
         file_id = voice["file_id"]
 
         try:
-            bot_token = '8618363177:AAFDBFLhQxmMXGKzm6-t3VtCRpTp_oMfxuo'
+            bot_token = BOT_TOKEN
             audio_bytes = await fetch_voice_bytes(file_id, bot_token)
         except Exception as e:
             print("ERR_FETCH_VOICE_BYTES", {"file_id": file_id, "err": repr(e)})
@@ -209,9 +208,14 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
         sender_username = sender.get("username")
         print("Message received from", sender_username)
         reply = message.get("reply_to_message")
-        reply_text = None
         if reply:
+            if "photo" in reply:
+                print("📸 User replied to an image")
+                print("Image reply payload:", reply)
+
             reply_text = reply.get("text")
+        else:
+            reply_text = None
 
         r.rpush(f"chatpay_queue_{business_id}", json.dumps(msg))
         print(f"Queued full message from {sender_username}")
