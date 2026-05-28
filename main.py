@@ -159,6 +159,36 @@ async def coinbase_webhook(request: Request):
         print("❌ Coinbase webhook error:", e)
         return {"status": "error"}
 
+@app.post("/whatsapp-webhook/{business_id}")
+async def whatsapp_webhook(business_id: str, request: Request):
+    form = await request.form()
+
+    body = form.get("Body")
+    sender = form.get("From")
+    num_media = int(form.get("NumMedia", 0))
+
+    media_url = form.get("MediaUrl0") if num_media > 0 else None
+
+    msg = {
+        "channel": "whatsapp",
+        "business_id": business_id,
+        "message": {
+            "text": body,
+            "from": {"id": sender},
+            "chat": {"id": sender}
+        }
+    }
+
+    if media_url:
+        msg["message"]["media_url"] = media_url
+
+    # ✅ ADD THIS
+    r.rpush(f"chatpay_queue_{business_id}", json.dumps(msg))
+
+    print("📩 Queued WhatsApp message:", msg)
+
+    return {"ok": True}
+
 @app.post("/telegram-webhook/{business_id}")
 async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)):
   
