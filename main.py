@@ -333,6 +333,11 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
 @app.post("/email-webhook")
 async def email_webhook(request: Request):
     """Outlook email webhook endpoint"""
+    validation_token = request.query_params.get("validationToken")
+    if validation_token:
+        print(f"✅ Email webhook validation: {validation_token[:50]}...")
+        return validation_token
+
     try:
         payload = await request.json()
     except Exception as e:
@@ -340,11 +345,6 @@ async def email_webhook(request: Request):
         return {"status": "error"}
 
     try:
-        validation_token = payload.get("validationToken")
-        if validation_token:
-            print("Email webhook validation requested")
-            return validation_token
-
         notifications = payload.get("value", [])
         if not notifications:
             return {"status": "ok"}
