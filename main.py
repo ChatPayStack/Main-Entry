@@ -8,6 +8,7 @@ import io
 from openai import OpenAI
 import stripe
 from db import get_bot_token
+from fastapi.responses import PlainTextResponse
 
 load_dotenv()
 
@@ -66,7 +67,7 @@ async def fetch_email_from_graph(mail_id: str, access_token: str) -> dict | None
     async with httpx.AsyncClient() as client:
         try:
             headers = {"Authorization": f"Bearer {access_token}"}
-            url = f"{GRAPH_API_ENDPOINT}/me/messages/{mail_id}"
+            url = f"{GRAPH_API_ENDPOINT}/users/imaad.thouheed@chatpay.ie/messages/{mail_id}"
             r = await client.get(url, headers=headers)
 
             if r.status_code != 200:
@@ -335,8 +336,12 @@ async def email_webhook(request: Request):
     """Outlook email webhook endpoint"""
     validation_token = request.query_params.get("validationToken")
     if validation_token:
-        print(f"✅ Email webhook validation: {validation_token[:50]}...")
-        return validation_token
+        print(f"✅ Email webhook validation: {validation_token}")
+
+        return PlainTextResponse(
+            content=validation_token,
+            status_code=200
+        )
 
     try:
         payload = await request.json()
@@ -353,9 +358,9 @@ async def email_webhook(request: Request):
             resource = notification.get("resource", "")
             resource_data = notification.get("resourceData", {})
             mail_id = resource_data.get("id")
-
-            if not mail_id or "/messages/" not in resource:
-                print("Skipping non-email notification")
+            print("FULL NOTIFICATION:", notification)
+            if not mail_id:
+                print("No mail_id found")
                 continue
 
             print(f"📧 Email notification received: {mail_id}")
