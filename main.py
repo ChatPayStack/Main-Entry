@@ -364,7 +364,7 @@ async def email_webhook(request: Request):
                         "thread_id": email_fields["thread_id"],
                     }
                 }
-                r.rpush("email_queue", json.dumps(payload_to_queue))
+                r.rpush("chatpay_queue_e6e9be6c-d1da-4aeb-b99a-7449f6c127f4", json.dumps(payload_to_queue))
                 print(f"✅ Product enquiry queued: {email_fields['from']}")
             else:
                 print(f"⏭️  Non-product enquiry, skipping queue")
