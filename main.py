@@ -130,7 +130,7 @@ async def classify_email_with_openai(subject: str, body: str) -> str:
 
 @app.post("/stripe-webhook")
 async def stripe_webhook(request: Request):
-    
+
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
 
@@ -157,7 +157,7 @@ async def stripe_webhook(request: Request):
         }))
 
         print("Stripe completion pushed to queue")
-    
+
     elif event["type"] in ["checkout.session.expired", "payment_intent.payment_failed"]:
         obj = event["data"]["object"]
 
@@ -231,7 +231,7 @@ async def coinbase_webhook(request: Request):
 
 @app.post("/telegram-webhook/{business_id}")
 async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)):
-  
+
     try:
         msg = await request.json()
         msg["business_id"] = business_id
@@ -272,9 +272,9 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
         message["text"] = txt
         msg["message"] = message
         r.rpush(f"chatpay_queue_{business_id}", json.dumps(msg))
-        
+
     elif "text" in message:
-        sender = message.get("from", {})     
+        sender = message.get("from", {})
         sender_username = sender.get("username")
         print("Message received from", sender_username)
         reply = message.get("reply_to_message")
@@ -366,7 +366,7 @@ async def email_webhook(request: Request):
                         "message_id": email_fields["message_id"],
                     }
                 }
-                r.rpush("email_queue", json.dumps(payload_to_queue))
+                r.rpush("chatpay_queue_e6e9be6c-d1da-4aeb-b99a-7449f6c127f4", json.dumps(payload_to_queue))
                 print(f"✅ Product enquiry queued: {email_fields['from']}")
             else:
                 print(f"⏭️  Non-product enquiry, skipping queue")
