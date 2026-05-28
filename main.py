@@ -96,6 +96,7 @@ def extract_email_fields(email_data: dict) -> dict:
         "subject": subject,
         "body": body,
         "thread_id": thread_id,
+        "message_id": email_data.get("id", ""),
     }
 
 
@@ -362,6 +363,7 @@ async def email_webhook(request: Request):
                         "subject": email_fields["subject"],
                         "body": email_fields["body"],
                         "thread_id": email_fields["thread_id"],
+                        "message_id": email_fields["message_id"],
                     }
                 }
                 r.rpush("email_queue", json.dumps(payload_to_queue))
