@@ -24,6 +24,9 @@ WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_SEND_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
+GRAPH_API_ENDPOINT = os.getenv("GRAPH_API_ENDPOINT", "https://graph.microsoft.com/v1.0")
+EMAIL_WEBHOOK_TOKEN = os.getenv("EMAIL_WEBHOOK_TOKEN")
+
 client = OpenAI()
 
 async def fetch_voice_bytes(file_id: str, bot_token: str) -> bytes:
@@ -56,6 +59,71 @@ async def fetch_voice_bytes(file_id: str, bot_token: str) -> bytes:
             print("ERR_TELEGRAM_DOWNLOAD", {"file_path": locals().get("file_path"), "status": getattr(r2, "status_code", None), "err": repr(e)})
             raise
         return r2.content
+
+
+async def fetch_email_from_graph(mail_id: str, access_token: str) -> dict | None:
+    """Fetch full email details from Microsoft Graph API"""
+    async with httpx.AsyncClient() as client:
+        try:
+            headers = {"Authorization": f"Bearer {access_token}"}
+            url = f"{GRAPH_API_ENDPOINT}/me/messages/{mail_id}"
+            r = await client.get(url, headers=headers)
+
+            if r.status_code != 200:
+                print("ERR_GRAPH_FETCH", {"status": r.status_code, "mail_id": mail_id})
+                return None
+
+            return r.json()
+        except Exception as e:
+            print("ERR_FETCH_EMAIL_FROM_GRAPH", {"mail_id": mail_id, "err": repr(e)})
+            return None
+
+
+def extract_email_fields(email_data: dict) -> dict:
+    """Extract sender, subject, body, and thread ID from email data"""
+    sender = email_data.get("from", {}).get("emailAddress", {})
+    sender_email = sender.get("address", "unknown")
+    sender_name = sender.get("name", "")
+
+    subject = email_data.get("subject", "")
+    body = email_data.get("bodyPreview", "") or email_data.get("body", {}).get("content", "")
+    thread_id = email_data.get("conversationId", "")
+
+    return {
+        "from": sender_email,
+        "from_name": sender_name,
+        "subject": subject,
+        "body": body,
+        "thread_id": thread_id,
+    }
+
+
+async def classify_email_with_openai(subject: str, body: str) -> str:
+    """Classify email as product_enquiry or other using OpenAI"""
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an email classifier. Classify emails as either 'product_enquiry' or 'other'. Return only the classification word."
+                },
+                {
+                    "role": "user",
+                    "content": f"Subject: {subject}\n\nBody: {body[:500]}"
+                }
+            ],
+            temperature=0,
+            max_tokens=10,
+        )
+
+        classification = response.choices[0].message.content.strip().lower()
+        if "product_enquiry" in classification or "product enquiry" in classification:
+            return "product_enquiry"
+        return "other"
+    except Exception as e:
+        print("ERR_CLASSIFY_EMAIL", {"err": repr(e)})
+        return "other"
 
 
 @app.post("/stripe-webhook")
@@ -231,6 +299,76 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
 
     return {"ok": True}
 
+
+@app.post("/email-webhook")
+async def email_webhook(request: Request):
+    """Outlook email webhook endpoint"""
+    try:
+        payload = await request.json()
+    except Exception as e:
+        print("ERR_EMAIL_WEBHOOK_JSON", repr(e))
+        return {"status": "error"}
+
+    try:
+        validation_token = payload.get("validationToken")
+        if validation_token:
+            print("Email webhook validation requested")
+            return validation_token
+
+        notifications = payload.get("value", [])
+        if not notifications:
+            return {"status": "ok"}
+
+        for notification in notifications:
+            resource = notification.get("resource", "")
+            resource_data = notification.get("resourceData", {})
+            mail_id = resource_data.get("id")
+
+            if not mail_id or "/messages/" not in resource:
+                print("Skipping non-email notification")
+                continue
+
+            print(f"📧 Email notification received: {mail_id}")
+
+            access_token = os.getenv("GRAPH_API_ACCESS_TOKEN")
+            if not access_token:
+                print("ERR_MISSING_GRAPH_ACCESS_TOKEN")
+                continue
+
+            email_data = await fetch_email_from_graph(mail_id, access_token)
+            if not email_data:
+                print("Failed to fetch email from Graph API")
+                continue
+
+            email_fields = extract_email_fields(email_data)
+            print(f"📧 Email extracted: from={email_fields['from']}, subject={email_fields['subject'][:50]}")
+            print(f"Body preview: {email_fields['body'][:200]}")
+
+            classification = await classify_email_with_openai(email_fields["subject"], email_fields["body"])
+            print(f"Classification: {classification}")
+
+            if classification == "product_enquiry":
+                payload_to_queue = {
+                    "channel": "email",
+                    "classification": "product_enquiry",
+                    "message": {
+                        "from": email_fields["from"],
+                        "from_name": email_fields["from_name"],
+                        "subject": email_fields["subject"],
+                        "body": email_fields["body"],
+                        "thread_id": email_fields["thread_id"],
+                    }
+                }
+                r.rpush("email_queue", json.dumps(payload_to_queue))
+                print(f"✅ Product enquiry queued: {email_fields['from']}")
+            else:
+                print(f"⏭️  Non-product enquiry, skipping queue")
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        print("ERR_EMAIL_WEBHOOK", repr(e))
+        return {"status": "error"}
 
 
 @app.get("/queue")
