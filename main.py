@@ -301,6 +301,35 @@ async def telegram_webhook(business_id: str, request: Request, x_telegram_bot_ap
 
     return {"ok": True}
 
+@app.post("/whatsapp-webhook/{business_id}")
+async def whatsapp_webhook(business_id: str, request: Request):
+    form = await request.form()
+
+    body = form.get("Body")
+    sender = form.get("From")
+    num_media = int(form.get("NumMedia", 0))
+
+    media_url = form.get("MediaUrl0") if num_media > 0 else None
+
+    msg = {
+        "channel": "whatsapp",
+        "business_id": business_id,
+        "message": {
+            "text": body,
+            "from": {"id": sender},
+            "chat": {"id": sender}
+        }
+    }
+
+    if media_url:
+        msg["message"]["media_url"] = media_url
+
+    # ✅ ADD THIS
+    r.rpush(f"chatpay_queue_{business_id}", json.dumps(msg))
+
+    print("📩 Queued WhatsApp message:", msg)
+
+    return {"ok": True}
 
 @app.post("/email-webhook")
 async def email_webhook(request: Request):
