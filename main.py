@@ -1,5 +1,5 @@
 import redis
-from fastapi import FastAPI, Header, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 import os
 from dotenv import load_dotenv
 import json
@@ -142,7 +142,7 @@ async def stripe_webhook(request: Request):
         )
     except Exception as e:
         print("Stripe signature verification failed:", e)
-        return {"status": "invalid"}
+        raise HTTPException(status_code=400, detail="invalid_signature")
 
     if event["type"] == "checkout.session.completed":
         print("Reached the completed part")
